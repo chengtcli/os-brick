@@ -95,10 +95,26 @@ class LuksEncryptor(cryptsetup.CryptsetupEncryptor):
         :param passphrase: the passphrase used to access the volume
         """
         LOG.debug("opening encrypted volume %s", self.dev_path)
-        self._execute('cryptsetup', 'luksOpen', '--key-file=-',
-                      self.dev_path, self.dev_name, process_input=passphrase,
-                      run_as_root=True, check_exit_code=True,
-                      root_helper=self._root_helper)
+        if not self._is_opened():
+            self._execute('cryptsetup', 'luksOpen', '--key-file=-',
+                          self.dev_path, self.dev_name,
+                          process_input=passphrase,
+                          run_as_root=True, check_exit_code=True,
+                          root_helper=self._root_helper)
+        else:
+            LOG.info("volume %s is already opened", self.dev_path)
+
+    def _is_opened(self):
+        """Check if the the volume is opened
+
+        """
+        try:
+            self._execute('cryptsetup', 'status', self.dev_name,
+                          run_as_root=True, check_exit_code=True,
+                          root_helper=self._root_helper)
+        except putils.ProcessExecutionError:
+            return False
+        return True
 
     def _unmangle_volume(self, key, passphrase, **kwargs):
         """Workaround for bug#1633518
@@ -185,7 +201,8 @@ class LuksEncryptor(cryptsetup.CryptsetupEncryptor):
     def _close_volume(self, **kwargs):
         """Closes the device (effectively removes the dm-crypt mapping)."""
         LOG.debug("closing encrypted volume %s", self.dev_path)
-        self._execute('cryptsetup', 'luksClose', self.dev_name,
-                      run_as_root=True, check_exit_code=True,
-                      root_helper=self._root_helper,
-                      attempts=3)
+        if self._is_opened():
+            self._execute('cryptsetup', 'luksClose', self.dev_name,
+                          run_as_root=True, check_exit_code=True,
+                          root_helper=self._root_helper,
+                          attempts=3)
